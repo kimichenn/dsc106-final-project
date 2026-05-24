@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Five-Minute Fire: Watching Los Angeles Burn from Orbit</title>
+        <meta
+            name="description"
+            content="An interactive explorable explanation of the January 2025 Los Angeles wildfires, seen every few minutes through NOAA's GOES-16 satellite."
+        />
+        <link
+            rel="icon"
+            href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#128293;</text></svg>"
+        />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="style.css" />
+        <script>
+            /* apply a saved theme before first paint to avoid a flash;
+       with no saved choice the CSS follows the device automatically */
+            try {
+                var t = localStorage.getItem("fmf-theme");
+                if (t === "light" || t === "dark")
+                    document.documentElement.setAttribute("data-theme", t);
+            } catch (e) {}
+        </script>
+    </head>
+    <body>
+        <button
+            id="theme-toggle"
+            class="theme-toggle"
+            type="button"
+            aria-label="Switch color theme"
+        >
+            ☀
+        </button>
+
+        <!-- ================= HERO ================= -->
+        <header class="hero">
+            <div class="hero-grain" aria-hidden="true"></div>
+            <div class="hero-glow" aria-hidden="true"></div>
+
+            <nav class="topbar">
+                <span class="wordmark">◦ FIVE-MINUTE FIRE</span>
+                <span class="topbar-meta"
+                    >DSC 106 · FINAL PROJECT · SP 2026</span
+                >
+            </nav>
+
+            <div class="hero-inner">
+                <p class="eyebrow reveal" style="--d: 0s">
+                    GOES-16 &nbsp;/&nbsp; GEOSTATIONARY &nbsp;/&nbsp;
+                    35,786 KM ALTITUDE
+                </p>
+                <h1 class="hero-title">
+                    <span class="reveal" style="--d: 0.08s"
+                        >The fire moved faster</span
+                    >
+                    <span class="reveal" style="--d: 0.16s"
+                        >than anyone could <em>watch.</em></span
+                    >
+                </h1>
+                <p class="hero-lede reveal" style="--d: 0.3s">
+                    So we watched it from space. Every few minutes through
+                    January 2025, a weather satellite 35,786&nbsp;km above the
+                    Pacific took the temperature of Los Angeles and recorded the
+                    Palisades and Eaton fires as they happened.
+                </p>
+                <div class="hero-foot reveal" style="--d: 0.44s">
+                    <div class="byline">
+                        <span class="byline-label">A visualization by</span>
+                        <span class="byline-names"
+                            >Pixel&nbsp;Firefighters</span
+                        >
+                        <span class="byline-sub"
+                            >Kimi&nbsp;Chen · Jayden&nbsp;Li · Dylan&nbsp;Louie
+                            · Shreyesh&nbsp;Vankina</span
+                        >
+                    </div>
+                    <a class="scrollcue" href="#setup">
+                        <span>BEGIN</span>
+                        <span class="scrollcue-arrow">↓</span>
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <!-- ================= AND ================= -->
+            <section class="beat" id="setup">
+                <p class="beat-index">01 — THE SETUP</p>
+                <p class="beat-text">
+                    Two wet winters had packed the hills above Los Angeles with
+                    brush.
+                    <strong>And</strong> on the morning of January&nbsp;7,
+                    hurricane-force Santa&nbsp;Ana winds came down the canyons
+                    at up to 160&nbsp;km/h. The basin was a fuel bed waiting for
+                    a spark.
+                </p>
+            </section>
+
+            <!-- ================= THE OBSERVATORY ================= -->
+            <section class="observatory" id="observatory">
+                <div class="obs-head">
+                    <p class="beat-index">02 — THE FEED</p>
+                    <h2>Scrub through four days of fire.</h2>
+                    <p class="obs-sub">
+                        Each mark below is a single 2&nbsp;km pixel where
+                        GOES-16 detected active fire. The brighter it glows, the
+                        more heat the fire is throwing off. That heat output is
+                        its <em>radiative power</em>, the number on the readouts.
+                        <strong>Scroll</strong>
+                        to let the satellite walk you through the disaster, or
+                        take the controls and explore the four days yourself.
+                    </p>
+                </div>
+
+                <!-- scrollytelling: sticky instrument + scroll-driven steps -->
+                <div class="scrolly" id="scrolly">
+                    <!-- THE STICKY GRAPHIC -->
+                    <div class="scrolly-graphic">
+                        <div class="instrument">
+                            <!-- live readouts -->
+                            <div class="readouts">
+                                <div class="readout readout-time">
+                                    <span class="r-label"
+                                        >SATELLITE TIMESTAMP (PST)</span
+                                    >
+                                    <span class="r-value" id="r-time">—</span>
+                                </div>
+                                <div class="readout">
+                                    <span class="r-label"
+                                        >TOTAL RADIATIVE POWER</span
+                                    >
+                                    <span class="r-value" id="r-frp">—</span>
+                                </div>
+                                <div class="readout">
+                                    <span class="r-label"
+                                        >ACTIVE FIRE PIXELS</span
+                                    >
+                                    <span class="r-value" id="r-px">—</span>
+                                </div>
+                                <div class="readout">
+                                    <span class="r-label"
+                                        >CUMULATIVE FOOTPRINT</span
+                                    >
+                                    <span class="r-value" id="r-area">—</span>
+                                </div>
+                            </div>
+
+                            <!-- map + legend + annotations -->
+                            <div class="stage">
+                                <canvas id="map"></canvas>
+                                <div
+                                    class="annos"
+                                    id="annos"
+                                    aria-hidden="true"
+                                ></div>
+                                <div
+                                    class="map-tooltip"
+                                    id="tooltip"
+                                    hidden
+                                ></div>
+
+                                <div class="legend">
+                                    <p class="legend-title">
+                                        FIRE RADIATIVE POWER
+                                    </p>
+                                    <div
+                                        class="legend-scale"
+                                        id="legend-scale"
+                                    ></div>
+                                    <div class="legend-ends">
+                                        <span>smoldering · 10 MW</span>
+                                        <span>firestorm · 4,000 MW</span>
+                                    </div>
+                                    <p class="legend-note">
+                                        Brighter &amp; larger = more intense
+                                        burning.
+                                    </p>
+                                </div>
+
+                                <div class="stage-tag stage-tag-tl">
+                                    SANTA MONICA BAY
+                                </div>
+                            </div>
+
+                            <!-- transport controls -->
+                            <div class="controls">
+                                <button
+                                    id="play"
+                                    class="play-btn"
+                                    aria-label="Play or pause the animation"
+                                >
+                                    <span class="play-icon">▶</span>
+                                    <span class="play-text">PLAY</span>
+                                </button>
+                                <div
+                                    class="speed"
+                                    role="group"
+                                    aria-label="Playback speed"
+                                >
+                                    <span>SPEED</span>
+                                    <button class="speed-btn" data-mult="1">
+                                        1×
+                                    </button>
+                                    <button
+                                        class="speed-btn is-on"
+                                        data-mult="2"
+                                    >
+                                        2×
+                                    </button>
+                                    <button class="speed-btn" data-mult="4">
+                                        4×
+                                    </button>
+                                </div>
+                                <button id="restart" class="ghost-btn">
+                                    ↺ RESTART
+                                </button>
+                            </div>
+
+                            <!-- FRP timeline / scrubber -->
+                            <div class="timeline">
+                                <p class="timeline-label">
+                                    TOTAL RADIATIVE POWER OVER TIME:
+                                    <span class="dot dot-p"></span>Palisades
+                                    &nbsp; <span class="dot dot-e"></span>Eaton
+                                    &nbsp;·&nbsp; drag to scrub
+                                </p>
+                                <svg
+                                    id="timeline-svg"
+                                    role="img"
+                                    aria-label="Radiative power timeline. Drag to scrub through time"
+                                ></svg>
+                            </div>
+
+                            <p class="kbd-hint">
+                                <kbd>Space</kbd> play/pause &nbsp; <kbd>←</kbd
+                                ><kbd>→</kbd> step &nbsp;
+                                <kbd>Home</kbd> restart
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- THE SCROLLING STEPS -->
+                    <div class="scrolly-steps">
+                        <div
+                            class="step is-active"
+                            data-frame="0"
+                            data-anno="0"
+                        >
+                            <p class="step-badge">10:36 AM · JAN 7</p>
+                            <p class="step-text">
+                                It begins as a single pixel. A spark in the dry
+                                brush above Pacific&nbsp;Palisades registers as
+                                <strong>220 megawatts</strong> of radiated heat,
+                                the first thing the satellite sees.
+                            </p>
+                        </div>
+
+                        <div class="step" data-frame="31" data-anno="1">
+                            <p class="step-badge">6:26 PM · JAN 7</p>
+                            <p class="step-text">
+                                Eight hours later, as crews converge on the
+                                coast, a second bloom appears 30&nbsp;km inland
+                                above Altadena, the
+                                <strong>Eaton fire</strong>. Now the basin is
+                                burning on two fronts at once.
+                            </p>
+                        </div>
+
+                        <div class="step" data-frame="51" data-anno="2">
+                            <p class="step-badge">11:00 PM · JAN 7</p>
+                            <p class="step-text">
+                                After dark the Santa&nbsp;Ana winds peak.
+                                Together the two fires radiate
+                                <strong>43 gigawatts</strong>, the heat of
+                                roughly forty large power plants. No ground crew
+                                can hold a line against this.
+                            </p>
+                        </div>
+
+                        <div class="step" data-frame="75" data-anno="3">
+                            <p class="step-badge">5:15 AM · JAN 8</p>
+                            <p class="step-text">
+                                Then, at dawn, the winds fall away. The fires
+                                shrink below the satellite's detection threshold
+                                and nearly
+                                <strong>vanish from the feed</strong>. They are
+                                not out yet, but they are waiting for the
+                                afternoon.
+                            </p>
+                        </div>
+
+                        <div class="step" data-frame="405" data-anno="-1">
+                            <p class="step-badge">JAN 11 — FOUR DAYS ON</p>
+                            <p class="step-text">
+                                GOES-16 has now watched fire touch
+                                <strong>216&nbsp;km²</strong> of
+                                Los&nbsp;Angeles County. The pulse never
+                                resolved into "over", it just slowed.
+                                <span class="step-cue"
+                                    >Take the controls: play, scrub the
+                                    timeline, or hover any pixel to explore the
+                                    four days yourself.</span
+                                >
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= THE EVIDENCE ================= -->
+            <section class="evidence" id="evidence">
+                <div class="obs-head">
+                    <p class="beat-index">03 — THE EVIDENCE</p>
+                    <h2>Why five minutes matters.</h2>
+                    <p class="obs-sub">
+                        A satellite's <em>cadence</em> is how often it can look,
+                        and that comes down to its orbit. A geostationary
+                        satellite hovers over the same spot, so it can look every
+                        few minutes. A polar-orbiting one circles the planet and
+                        passes over Los&nbsp;Angeles only a few times a day.
+                        <strong>Drag the slider</strong>
+                        to make the satellite look less often, and watch how much
+                        of the fire a slower one would simply never see.
+                    </p>
+                </div>
+
+                <div class="cadence">
+                    <div class="cadence-readouts">
+                        <div class="readout">
+                            <span class="r-label">SAMPLING INTERVAL</span>
+                            <span class="r-value" id="c-interval">—</span>
+                        </div>
+                        <div class="readout">
+                            <span class="r-label">LOOKS PER DAY</span>
+                            <span class="r-value" id="c-perday">—</span>
+                        </div>
+                        <div class="readout">
+                            <span class="r-label">FIRE RHYTHM LOST</span>
+                            <span class="r-value" id="c-loss">—</span>
+                        </div>
+                    </div>
+
+                    <svg
+                        id="cadence-svg"
+                        role="img"
+                        aria-label="Total radiative power, resampled at the chosen interval against the full GOES record"
+                    ></svg>
+
+                    <div class="cadence-control">
+                        <label for="cadence-slider" class="cadence-label">
+                            SATELLITE LOOK RATE. Drag from a geostationary
+                            cadence toward a twice-daily orbiter
+                        </label>
+                        <input
+                            type="range"
+                            id="cadence-slider"
+                            min="0"
+                            max="5"
+                            step="1"
+                            value="0"
+                            aria-label="Sampling interval"
+                        />
+                        <div class="cadence-ticks" id="cadence-ticks"></div>
+                    </div>
+
+                    <p class="cadence-caption" id="cadence-caption">—</p>
+                </div>
+            </section>
+
+            <!-- ================= THEREFORE ================= -->
+            <section class="beat beat-therefore">
+                <p class="beat-index">04 — THE TAKEAWAY</p>
+                <p class="beat-text">
+                    <strong>Therefore:</strong> a fire is not an event, it is a
+                    <em>rhythm</em>. It surges with the wind, breathes with the
+                    daily heat, and outruns the people fighting it. A satellite
+                    that looks every few minutes can see that rhythm. But one
+                    that looks twice a day cannot. It only sees the aftermath.
+                </p>
+            </section>
+
+            <!-- ================= WRITEUP ================= -->
+            <section class="writeup">
+                <p class="beat-index">05 — PROJECT WRITEUP</p>
+                <div class="writeup-grid">
+                    <article>
+                        <h3>What we have done so far</h3>
+                        <p>
+                            We have built the full data pipeline and the
+                            interactive visualizations shown above. A Python
+                            tool scans all 1,440 five-minute GOES-16 fire scans
+                            from January 7-11, 2025 and extracts every fire
+                            pixel inside the Los Angeles basin, and there are
+                            7,790 detections in total. We then sort each into
+                            the Palisades fire, the Eaton fire, or other nearby
+                            activity. From that dataset we built a
+                            scrollytelling visualization with an animated map
+                            the reader can play, pause, and scrub, as well as a
+                            synchronized radiative-power timeline, on-map
+                            annotations for the key moments, and live instrument
+                            readouts. We also made a second interactive
+                            visualization to let the readers resample the data
+                            and see for themselves why GOES's high cadence
+                            matters.
+                        </p>
+                    </article>
+                    <article>
+                        <h3>The most challenging part to design</h3>
+                        <p>
+                            The hardest design problem is making
+                            <em>time itself</em> legible. GOES samples every few
+                            minutes for more than four days, which is far too
+                            many frames to show at once. Yet, the story is in
+                            exactly those fine-grained changes, since a strong
+                            wind can double a fire in under an hour. We had to
+                            design interactions that let a reader move fluidly
+                            between the big picture and the telling detail
+                            without losing their place. A second challenge is
+                            honest encoding: detections are intermittent and
+                            noisy, so our heat-decay rendering must feel like a
+                            living fire without inventing data the satellite
+                            never recorded. Balancing emotional impact against
+                            that scientific honesty is a pretty challenging
+                            aspect of this project.
+                        </p>
+                    </article>
+                </div>
+            </section>
+        </main>
+
+        <footer class="site-foot">
+            <span
+                >DATA: NOAA GOES-16 ABI-L2-FDCC via the AWS Open Data
+                Registry</span
+            >
+            <span>BASEMAP: US Census county boundaries</span>
+            <span>BUILT WITH D3.js</span>
+        </footer>
+
+        <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+        <script src="main.js"></script>
+        <script>
+            /* theme toggle. Overrides the device default and remembers the choice */
+            (function () {
+                var root = document.documentElement;
+                var btn = document.getElementById("theme-toggle");
+                var mq = window.matchMedia("(prefers-color-scheme: light)");
+                function effective() {
+                    return (
+                        root.getAttribute("data-theme") ||
+                        (mq.matches ? "light" : "dark")
+                    );
+                }
+                function paint() {
+                    var e = effective();
+                    btn.textContent = e === "dark" ? "☀" : "☾";
+                    btn.setAttribute(
+                        "aria-label",
+                        e === "dark"
+                            ? "Switch to light theme"
+                            : "Switch to dark theme",
+                    );
+                }
+                btn.addEventListener("click", function () {
+                    var next = effective() === "dark" ? "light" : "dark";
+                    root.setAttribute("data-theme", next);
+                    try {
+                        localStorage.setItem("fmf-theme", next);
+                    } catch (e) {}
+                    paint();
+                });
+                mq.addEventListener("change", paint);
+                paint();
+            })();
+        </script>
+    </body>
+</html>
