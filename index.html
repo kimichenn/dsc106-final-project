@@ -53,8 +53,8 @@
 
             <div class="hero-inner">
                 <p class="eyebrow reveal" style="--d: 0s">
-                    GOES-16 &nbsp;/&nbsp; GEOSTATIONARY &nbsp;/&nbsp;
-                    35,786 KM ALTITUDE
+                    GOES-16 &nbsp;/&nbsp; GEOSTATIONARY &nbsp;/&nbsp; 35,786 KM
+                    ALTITUDE
                 </p>
                 <h1 class="hero-title">
                     <span class="reveal" style="--d: 0.08s"
@@ -97,9 +97,9 @@
                     Two wet winters had packed the hills above Los Angeles with
                     brush.
                     <strong>And</strong> on the morning of January&nbsp;7,
-                    hurricane-force Santa&nbsp;Ana winds came down the canyons
-                    at up to 160&nbsp;km/h. The basin was a fuel bed waiting for
-                    a spark.
+                    fierce Santa&nbsp;Ana winds tore down the canyons, gusting
+                    to 95&nbsp;km/h. The basin was a fuel bed waiting for a
+                    spark.
                 </p>
             </section>
 
@@ -112,7 +112,11 @@
                         Each mark below is a single 2&nbsp;km pixel where
                         GOES-16 detected active fire. The brighter it glows, the
                         more heat the fire is throwing off. That heat output is
-                        its <em>radiative power</em>, the number on the readouts.
+                        its <em>radiative power</em>, the number on the
+                        readouts. The blue streaks drifting across the map are
+                        the <em>Santa&nbsp;Ana wind</em>, and the dial reads its
+                        live speed and direction. Watch the fire surge as the
+                        wind picks up, or stir the air with your cursor.
                         <strong>Scroll</strong>
                         to let the satellite walk you through the disaster, or
                         take the controls and explore the four days yourself.
@@ -175,8 +179,12 @@
                                         id="legend-scale"
                                     ></div>
                                     <div class="legend-ends">
-                                        <span>smoldering · 10 MW</span>
-                                        <span>firestorm · 4,000 MW</span>
+                                        <span class="le-end"
+                                            >10 MW<i>smoldering</i></span
+                                        >
+                                        <span class="le-end le-right"
+                                            >4,000 MW<i>firestorm</i></span
+                                        >
                                     </div>
                                     <p class="legend-note">
                                         Brighter &amp; larger = more intense
@@ -184,8 +192,50 @@
                                     </p>
                                 </div>
 
-                                <div class="stage-tag stage-tag-tl">
-                                    SANTA MONICA BAY
+                                <!-- live wind dial: direction needle, speed ring, numbers -->
+                                <div
+                                    class="wind-hud"
+                                    id="wind-hud"
+                                    aria-hidden="true"
+                                >
+                                    <svg class="wind-dial" viewBox="0 0 60 60">
+                                        <circle
+                                            class="wind-ring-bg"
+                                            cx="30"
+                                            cy="30"
+                                            r="23"
+                                        ></circle>
+                                        <g class="wind-ticks">
+                                            <text x="30" y="11">N</text>
+                                            <text x="50" y="32">E</text>
+                                            <text x="30" y="54">S</text>
+                                            <text x="10" y="32">W</text>
+                                        </g>
+                                        <g class="wind-needle" id="wind-needle">
+                                            <line
+                                                x1="30"
+                                                y1="30"
+                                                x2="30"
+                                                y2="14"
+                                            ></line>
+                                            <polygon
+                                                points="30,7 26,17 34,17"
+                                            ></polygon>
+                                        </g>
+                                    </svg>
+                                    <div class="wind-nums">
+                                        <div class="wind-tag">
+                                            SANTA ANA WIND
+                                        </div>
+                                        <div class="wind-speed">
+                                            <span id="wind-spd">—</span
+                                            ><span class="wind-unit">km/h</span>
+                                        </div>
+                                        <div class="wind-sub">
+                                            gusts <b id="wind-gust">—</b> · from
+                                            <b id="wind-from">—</b>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -226,9 +276,10 @@
                             <!-- FRP timeline / scrubber -->
                             <div class="timeline">
                                 <p class="timeline-label">
-                                    TOTAL RADIATIVE POWER OVER TIME:
+                                    RADIATIVE POWER:
                                     <span class="dot dot-p"></span>Palisades
                                     &nbsp; <span class="dot dot-e"></span>Eaton
+                                    &nbsp; <span class="dot dot-w"></span>Wind
                                     &nbsp;·&nbsp; drag to scrub
                                 </p>
                                 <svg
@@ -287,17 +338,17 @@
                         <div class="step" data-frame="75" data-anno="3">
                             <p class="step-badge">5:15 AM · JAN 8</p>
                             <p class="step-text">
-                                Then, at dawn, the winds fall away. The fires
-                                shrink below the satellite's detection threshold
-                                and nearly
-                                <strong>vanish from the feed</strong>. They are
-                                not out yet, but they are waiting for the
-                                afternoon.
+                                Then, at dawn, the overnight surge passes. Even
+                                with the wind still blowing, the fires shrink
+                                below the satellite's detection threshold and
+                                nearly <strong>vanish from the feed</strong>.
+                                They are not out yet, but they are waiting for
+                                the afternoon.
                             </p>
                         </div>
 
                         <div class="step" data-frame="405" data-anno="-1">
-                            <p class="step-badge">JAN 11 — FOUR DAYS ON</p>
+                            <p class="step-badge">JAN 11: FOUR DAYS ON</p>
                             <p class="step-text">
                                 GOES-16 has now watched fire touch
                                 <strong>216&nbsp;km²</strong> of
@@ -322,12 +373,13 @@
                     <p class="obs-sub">
                         A satellite's <em>cadence</em> is how often it can look,
                         and that comes down to its orbit. A geostationary
-                        satellite hovers over the same spot, so it can look every
-                        few minutes. A polar-orbiting one circles the planet and
-                        passes over Los&nbsp;Angeles only a few times a day.
+                        satellite hovers over the same spot, so it can look
+                        every few minutes. A polar-orbiting one circles the
+                        planet and passes over Los&nbsp;Angeles only a few times
+                        a day.
                         <strong>Drag the slider</strong>
-                        to make the satellite look less often, and watch how much
-                        of the fire a slower one would simply never see.
+                        to make the satellite look less often, and watch how
+                        much of the fire a slower one would simply never see.
                     </p>
                 </div>
 
@@ -347,11 +399,18 @@
                         </div>
                     </div>
 
-                    <svg
-                        id="cadence-svg"
-                        role="img"
-                        aria-label="Total radiative power, resampled at the chosen interval against the full GOES record"
-                    ></svg>
+                    <div class="cadence-plot">
+                        <svg
+                            id="cadence-svg"
+                            role="img"
+                            aria-label="Total radiative power, resampled at the chosen interval against the full GOES record"
+                        ></svg>
+                        <div
+                            class="viz-tooltip"
+                            id="cadence-tooltip"
+                            hidden
+                        ></div>
+                    </div>
 
                     <div class="cadence-control">
                         <label for="cadence-slider" class="cadence-label">
@@ -408,7 +467,11 @@
                             readouts. We also made a second interactive
                             visualization to let the readers resample the data
                             and see for themselves why GOES's high cadence
-                            matters.
+                            matters. To ground the story's claim that a fire
+                            "surges with the wind," we layered in the real
+                            Santa&nbsp;Ana wind from ERA5 reanalysis, aligned
+                            frame-for-frame with the fire, so the reader can
+                            watch the two rise and fall together.
                         </p>
                     </article>
                     <article>
@@ -437,8 +500,12 @@
 
         <footer class="site-foot">
             <span
-                >DATA: NOAA GOES-16 ABI-L2-FDCC via the AWS Open Data
+                >FIRE: NOAA GOES-16 ABI-L2-FDCC via the AWS Open Data
                 Registry</span
+            >
+            <span
+                >WIND: Open-Meteo ERA5 reanalysis — basin-scale 10 m wind;
+                local canyon gusts ran higher</span
             >
             <span>BASEMAP: US Census county boundaries</span>
             <span>BUILT WITH D3.js</span>

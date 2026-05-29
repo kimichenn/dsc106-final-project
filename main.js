@@ -50,7 +50,7 @@ const ANNOS = [
         color: "#74c4d0",
         side: "left",
         title: "DAWN · JAN 8",
-        body: "The winds ease. The fires shrink below the satellite's view.",
+        body: "The overnight surge passes. The fires sink below the satellite's view, though the wind still blows.",
     },
 ];
 
@@ -76,9 +76,14 @@ const els = {
     restart: document.getElementById("restart"),
     tlSvg: d3.select("#timeline-svg"),
     legendScale: document.getElementById("legend-scale"),
+    windHud: document.getElementById("wind-hud"),
+    windSpd: document.getElementById("wind-spd"),
+    windGust: document.getElementById("wind-gust"),
+    windFrom: document.getElementById("wind-from"),
+    windNeedle: document.getElementById("wind-needle"),
 };
 
-let DATA, BASEMAP, projection;
+let DATA, BASEMAP, WIND, projection;
 let basemapCache; // offscreen canvas with static map
 let frameIdx = 0,
     playing = false,
@@ -89,14 +94,23 @@ let lastTick = 0,
 let litPixels = [];
 const pixels = new Map(); // "lat,lon" -> {lat,lon,fire,heat,lastPower,sx,sy,r}
 
+/* ambient wind streaks: persistent drift layer over the map */
+let particles = [],
+    ambientRunning = false,
+    lastAmbient = 0;
+
 /* ---------- load ---------- */
 Promise.all([
     d3.json("data/goes_frames.json"),
     d3.json("data/socal_basemap.json"),
+    // wind is an enhancement layer — never let a missing file break the core viz
+    d3.json("data/wind.json").catch(() => null),
 ])
-    .then(([frames, basemap]) => {
+    .then(([frames, basemap, wind]) => {
         DATA = frames;
         BASEMAP = basemap;
+        WIND = wind;
+        if (WIND) setupWind();
         setupMap();
         buildAnnos();
         setupTimeline();
@@ -107,6 +121,7 @@ Promise.all([
         setupScrolly();
         rebuildHeatTo(0);
         render();
+        if (WIND) setupAmbient();
         // rebuild on resize — and once more when the canvas reaches its real
         // size, in case layout had not settled when the projection was first built
         const onResizeD = debounce(onResize, 180);
@@ -145,12 +160,13 @@ function setupMap() {
     sizeCanvas();
     projection = d3.geoMercator().fitSize([cssW(), cssH()], viewCorners());
     buildBasemapCache();
+    seedParticles();
 
     els.canvas.addEventListener("mousemove", onHover);
-    els.canvas.addEventListener(
-        "mouseleave",
-        () => (els.tooltip.hidden = true),
-    );
+    els.canvas.addEventListener("mouseleave", () => {
+        els.tooltip.hidden = true;
+        windMouse.active = false;
+    });
 
     els.legendScale.innerHTML = "";
 }
@@ -301,7 +317,14 @@ function applyFrame(f, first) {
         const key = lat + "," + lon;
         let p = pixels.get(key);
         if (!p) {
-            p = { lat, lon, fire, heat: 0, lastPower: 0 };
+            p = {
+                lat,
+                lon,
+                fire,
+                heat: 0,
+                lastPower: 0,
+                phase: Math.random() * 6.283, // flicker offset
+            };
             pixels.set(key, p);
         }
         p.heat = Math.max(p.heat, power);
@@ -317,7 +340,11 @@ function render() {
     ctx.clearRect(0, 0, cssW(), cssH());
     ctx.drawImage(basemapCache, 0, 0, cssW(), cssH());
 
+    // wind trails (offscreen layer) sit under the fire so flames stay dominant
+    if (WIND && windLayer) ctx.drawImage(windLayer, 0, 0, cssW(), cssH());
+
     const base = cellPx();
+    const now = performance.now();
     ctx.globalCompositeOperation = "lighter";
     const lit = [];
     pixels.forEach((p) => {
@@ -325,8 +352,10 @@ function render() {
         const xy = projection([p.lon, p.lat]);
         if (!xy) return;
         const t = norm(p.heat); // 0..1 (log)
-        const R = base * (0.72 + 1.7 * t); // glow radius
-        drawGlow(ctx, xy[0], xy[1], R, t);
+        // a living flicker so the flames breathe even when paused
+        const fl = 1 + 0.08 * Math.sin(now * 0.006 + (p.phase || 0));
+        const R = base * (0.72 + 1.7 * t) * fl; // glow radius
+        drawGlow(ctx, xy[0], xy[1], R, t, fl);
         p.sx = xy[0];
         p.sy = xy[1];
         p.r = R;
@@ -338,11 +367,11 @@ function render() {
     renderAnnos();
 }
 
-function drawGlow(ctx, x, y, R, t) {
+function drawGlow(ctx, x, y, R, t, k = 1) {
     const c = fireColor(t);
     let g = ctx.createRadialGradient(x, y, 0, x, y, R);
-    g.addColorStop(0, rgba(c, 0.55 + 0.25 * t));
-    g.addColorStop(0.45, rgba(c, 0.18));
+    g.addColorStop(0, rgba(c, (0.55 + 0.25 * t) * k));
+    g.addColorStop(0.45, rgba(c, 0.18 * k));
     g.addColorStop(1, rgba(c, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -351,7 +380,7 @@ function drawGlow(ctx, x, y, R, t) {
     // hot core
     const cr = R * (0.22 + 0.16 * t);
     g = ctx.createRadialGradient(x, y, 0, x, y, cr);
-    g.addColorStop(0, rgba([255, 244, 214], 0.7 + 0.3 * t));
+    g.addColorStop(0, rgba([255, 244, 214], Math.min(1, (0.7 + 0.3 * t) * k)));
     g.addColorStop(1, rgba(c, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -387,6 +416,184 @@ function fireColor(t) {
 }
 function rgba(c, a) {
     return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+
+/* ============================================================
+   WIND  (real Open-Meteo ERA5 reanalysis, aligned to the frames)
+   The Santa Ana is a regional offshore flow, so one basin reading
+   drives a uniform field — honest, not faked spatial structure.
+   ============================================================ */
+const DIRS8 = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+function cardinal(deg) {
+    return DIRS8[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+}
+function setupWind() {
+    WIND.gustMax = d3.max(WIND.gust) || 1;
+    WIND.speedMax = d3.max(WIND.speed) || 1;
+}
+/* normalized 0..1 wind speed at frame i (drives the flow field, matches the
+   km/h on the dial so the visual and the number agree) */
+function windMag(i) {
+    return Math.max(0, Math.min(1, WIND.speed[i] / WIND.speedMax));
+}
+/* unit screen vector of the flow (where the wind blows TO).
+   dir is meteorological FROM-degrees; flow bearing = dir + 180.
+   screen: east = +x, north = -y. */
+function flowVec(dir) {
+    const th = ((dir + 180) * Math.PI) / 180;
+    return { x: Math.sin(th), y: -Math.cos(th) };
+}
+
+/* ---- ambient flow field: streaming trails of Santa Ana air ----
+   Particles are drawn onto an offscreen layer that fades a little each frame,
+   so each one leaves a long flowing trail (like a wind map) rather than a short
+   falling streak. Trail length, speed and brightness all scale with wind speed,
+   so a 6 km/h breeze and a 34 km/h blow look clearly different. */
+let windMouse = { x: 0, y: 0, active: false };
+let windLayer = null,
+    windLayerCtx = null;
+function ensureWindLayer() {
+    const dpr = window.devicePixelRatio || 1;
+    if (!windLayer) windLayer = document.createElement("canvas");
+    windLayer.width = cssW() * dpr;
+    windLayer.height = cssH() * dpr;
+    windLayerCtx = windLayer.getContext("2d");
+    windLayerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function mkParticle(w, h) {
+    return {
+        x: Math.random() * w,
+        y: Math.random() * h,
+        a: 0.55 + Math.random() * 0.6, // opacity jitter
+        s: 0.7 + Math.random() * 0.7, // speed jitter
+        w: 0.8 + Math.random() * 0.9, // trail width
+        o: Math.random() * 6.28, // meander phase
+        life: 1.5 + Math.random() * 3.5, // seconds before it respawns
+    };
+}
+function seedParticles() {
+    if (!WIND) return;
+    const w = cssW(),
+        h = cssH();
+    if (!w || !h) return;
+    ensureWindLayer();
+    const n = Math.min(72, Math.round((w * h) / 6500)); // sparse → airy
+    particles = Array.from({ length: n }, () => mkParticle(w, h));
+}
+/* advance the field and lay fresh trail segments onto the fading layer */
+function updateWindField(dt, now) {
+    if (!windLayerCtx || !particles.length || !WIND) return;
+    const w = cssW(),
+        h = cssH();
+    const v = flowVec(WIND.dir[frameIdx]);
+    const eff = Math.pow(windMag(frameIdx), 1.5); // exaggerate calm ↔ strong
+    const spd = 7 + 240 * eff; // px/sec — barely moving when calm
+    const R = Math.min(w, h) * 0.26; // cursor influence radius
+    const wlc = windLayerCtx;
+    // fade existing trails (a touch crisper when it's windy)
+    wlc.globalCompositeOperation = "destination-out";
+    wlc.fillStyle = `rgba(0,0,0,${(0.05 + 0.06 * eff).toFixed(3)})`;
+    wlc.fillRect(0, 0, w, h);
+    wlc.globalCompositeOperation = "lighter";
+    wlc.lineCap = "round";
+    const tph = now * 0.00018;
+    for (const p of particles) {
+        let vx = v.x,
+            vy = v.y;
+        // perpendicular meander so the air streams rather than falls like rain
+        const wob = Math.sin(p.y * 0.011 + p.x * 0.006 + tph + p.o) * 0.5;
+        vx += -v.y * wob;
+        vy += v.x * wob;
+        // stir the field with the cursor
+        if (windMouse.active) {
+            const dx = p.x - windMouse.x,
+                dy = p.y - windMouse.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < R * R) {
+                const d = Math.sqrt(d2) || 1;
+                const f = (1 - d / R) * 1.7;
+                vx += (-dy / d) * f;
+                vy += (dx / d) * f;
+            }
+        }
+        const nx = p.x + vx * spd * dt * p.s;
+        const ny = p.y + vy * spd * dt * p.s;
+        wlc.strokeStyle = `rgba(186,221,236,${((0.05 + 0.4 * eff) * p.a).toFixed(3)})`;
+        wlc.lineWidth = p.w;
+        wlc.beginPath();
+        wlc.moveTo(p.x, p.y);
+        wlc.lineTo(nx, ny);
+        wlc.stroke();
+        p.x = nx;
+        p.y = ny;
+        p.life -= dt;
+        if (p.life <= 0 || nx < -30 || nx > w + 30 || ny < -30 || ny > h + 30) {
+            p.x = Math.random() * w; // respawn (next frame starts a fresh trail)
+            p.y = Math.random() * h;
+            p.life = 1.5 + Math.random() * 3.5;
+        }
+    }
+    wlc.globalCompositeOperation = "source-over";
+}
+
+/* ---- on-map compass dial: direction needle, magnitude ring, numbers ---- */
+let windHudAngle = 0;
+function updateWindHUD(i) {
+    if (!WIND || !els.windHud) return;
+    els.windSpd.textContent = Math.round(WIND.speed[i]);
+    els.windGust.textContent = Math.round(WIND.gust[i]);
+    els.windFrom.textContent = cardinal(WIND.dir[i]);
+    // needle points the way the wind blows, matching the flow field
+    let target = WIND.dir[i] + 180;
+    while (target - windHudAngle > 180) target -= 360;
+    while (target - windHudAngle < -180) target += 360;
+    windHudAngle = target;
+    els.windNeedle.setAttribute(
+        "transform",
+        `rotate(${target.toFixed(1)} 30 30)`,
+    );
+}
+
+/* ---- persistent ticker: drifts streaks + advances playback ---- */
+function ambientTick(now) {
+    if (!ambientRunning) return;
+    const dt = lastAmbient ? Math.min(0.05, (now - lastAmbient) / 1000) : 0;
+    lastAmbient = now;
+    if (playing) {
+        const interval = 1000 / (6 * speedMult);
+        if (now - lastTick >= interval) {
+            lastTick = now;
+            stepForward();
+        }
+    }
+    updateWindField(dt, now);
+    render();
+    requestAnimationFrame(ambientTick);
+}
+function startAmbient() {
+    if (!WIND || ambientRunning) return;
+    ambientRunning = true;
+    lastAmbient = 0;
+    requestAnimationFrame(ambientTick);
+}
+function stopAmbient() {
+    ambientRunning = false;
+}
+/* only run the idle drift while the map is actually on screen */
+function setupAmbient() {
+    if (!WIND) return;
+    const obs = document.getElementById("observatory");
+    if (!obs) {
+        startAmbient();
+        return;
+    }
+    new IntersectionObserver(
+        (es) =>
+            es.forEach((e) =>
+                e.isIntersecting ? startAmbient() : stopAmbient(),
+            ),
+        { threshold: 0 },
+    ).observe(obs);
 }
 
 /* ============================================================
@@ -439,20 +646,25 @@ const MONTHS = [
     "Nov",
     "Dec",
 ];
-function updateReadouts() {
-    const fr = DATA.frames[frameIdx];
-    const [date, time] = fr.t.split("T");
+/* "2025-01-07T23:15" -> "Jan 7 · 11:15 PM" */
+function fmtTime(iso) {
+    const [date, time] = iso.split("T");
     const [, mo, day] = date.split("-").map(Number);
-    let [h, mn] = time.split(":").map(Number);
+    const [h, mn] = time.split(":").map(Number);
     const ampm = h >= 12 ? "PM" : "AM";
     const h12 = ((h + 11) % 12) + 1;
-    els.time.textContent = `${MONTHS[mo - 1]} ${day} · ${h12}:${String(mn).padStart(2, "0")} ${ampm}`;
+    return `${MONTHS[mo - 1]} ${day} · ${h12}:${String(mn).padStart(2, "0")} ${ampm}`;
+}
+function updateReadouts() {
+    const fr = DATA.frames[frameIdx];
+    els.time.textContent = fmtTime(fr.t);
 
     const frp = DATA.pulse.Palisades[frameIdx] + DATA.pulse.Eaton[frameIdx];
     els.frp.innerHTML = `${frp.toFixed(1)}<span class="unit">GW</span>`;
     els.px.textContent = fr.d.length;
     els.area.innerHTML = `${Math.round(DATA.cumKm2[frameIdx])}<span class="unit">km²</span>`;
 
+    if (WIND) updateWindHUD(frameIdx);
     movePlayhead();
 }
 
@@ -464,7 +676,7 @@ function setupTimeline() {
     const svg = els.tlSvg;
     const W = svg.node().clientWidth;
     const H = window.innerWidth <= 600 ? 106 : 132;
-    const M = { t: 14, r: 14, b: 22, l: 40 };
+    const M = { t: 30, r: WIND ? 42 : 14, b: 22, l: 40 };
     svg.attr("viewBox", `0 0 ${W} ${H}`).style("height", H + "px");
     svg.selectAll("*").remove();
 
@@ -478,15 +690,6 @@ function setupTimeline() {
         .scaleLinear()
         .domain([0, yMax])
         .range([H - M.b, M.t]);
-
-    // Santa Ana wind window
-    const sa1 = idxOfTime("2025-01-08T06:00");
-    svg.append("rect")
-        .attr("class", "tl-santa")
-        .attr("x", x(0))
-        .attr("y", M.t)
-        .attr("width", x(sa1) - x(0))
-        .attr("height", H - M.b - M.t);
 
     // areas
     const area = (key) =>
@@ -505,25 +708,55 @@ function setupTimeline() {
         .attr("fill", "#b98bf0")
         .attr("opacity", 0.6);
 
-    // ignition markers
-    // the two ignitions are only hours apart, so the labels would collide on one
-    // row — stack them (second one a line lower) and key each to its fire's color
+    // wind-speed line on its own right-hand axis — the fire surges with the wind
+    if (WIND) {
+        const wTop = Math.ceil(WIND.speedMax / 10) * 10; // nice round axis top
+        const yW = d3
+            .scaleLinear()
+            .domain([0, wTop])
+            .range([H - M.b, M.t]);
+        svg.append("path")
+            .attr("class", "tl-wind-line")
+            .attr(
+                "d",
+                d3
+                    .line()
+                    .x((_, i) => x(i))
+                    .y((d) => yW(d))
+                    .curve(d3.curveBasis)(WIND.speed),
+            );
+        d3.range(0, wTop + 1, 10).forEach((v) =>
+            svg
+                .append("text")
+                .attr("class", "tl-wind-axis")
+                .attr("x", W - M.r + 5)
+                .attr("y", yW(v) + 3)
+                .text(v === wTop ? `${v} km/h` : v),
+        );
+    }
+
+    // ignition markers — the two fires start only hours apart, so the labels sit
+    // stacked in the top margin (clear of the wind line and fire areas) with a
+    // faint fire-coloured rule dropping to the moment each fire first appears.
+    // Listed earliest-first so the upper label's rule never crosses the lower one.
     [
         ["Palisades", "#ff7a2e"],
         ["Eaton", "#b98bf0"],
     ].forEach(([k, col], gi) => {
         const i = DATA.pulse[k].findIndex((v) => v > 0);
         if (i < 0) return;
+        const ly = 11 + gi * 12; // label baseline, in the top margin
         svg.append("line")
             .attr("class", "tl-ignite")
             .attr("x1", x(i))
             .attr("x2", x(i))
-            .attr("y1", M.t)
-            .attr("y2", H - M.b);
+            .attr("y1", ly + 3)
+            .attr("y2", H - M.b)
+            .style("stroke", col);
         svg.append("text")
             .attr("class", "tl-ignite-label")
-            .attr("x", x(i) + 4)
-            .attr("y", M.t + 9 + gi * 12)
+            .attr("x", x(i) + 5)
+            .attr("y", ly)
             .style("fill", col)
             .text(k + " ignites");
     });
@@ -599,11 +832,6 @@ function movePlayhead() {
     if (!tl.ph) return;
     tl.ph.attr("transform", `translate(${tl.x(frameIdx)},0)`);
 }
-function idxOfTime(iso) {
-    const arr = DATA.frames;
-    for (let i = 0; i < arr.length; i++) if (arr[i].t >= iso) return i;
-    return arr.length - 1;
-}
 /* frame nearest local noon of each calendar day. Day labels sit at these
    centered positions so the partial first day (the record starts 10:30 AM
    Jan 7) doesn't make the dates look unevenly spaced. The axis is still
@@ -677,15 +905,6 @@ function drawCadence() {
         .domain([0, yMax])
         .range([H - M.b, M.t]);
 
-    // Santa Ana band
-    const sa1 = idxOfTime("2025-01-08T06:00");
-    svg.append("rect")
-        .attr("class", "cd-santa")
-        .attr("x", x(0))
-        .attr("y", M.t)
-        .attr("width", x(sa1) - x(0))
-        .attr("height", H - M.b - M.t);
-
     // ground-truth curve
     svg.append("path")
         .attr("class", "cd-truth")
@@ -721,6 +940,7 @@ function drawCadence() {
                 .x((i) => x(i))
                 .y((i) => y(tot[i]))(sIdx),
         );
+    const tip = document.getElementById("cadence-tooltip");
     svg.append("g")
         .selectAll("circle")
         .data(sIdx)
@@ -728,7 +948,15 @@ function drawCadence() {
         .attr("class", "cd-dot")
         .attr("r", 2.7)
         .attr("cx", (i) => x(i))
-        .attr("cy", (i) => y(tot[i]));
+        .attr("cy", (i) => y(tot[i]))
+        .on("pointerenter", function (_ev, i) {
+            d3.select(this).attr("r", 4.6);
+            showCadenceTip(tip, i, sIdx, tot, x, y, W);
+        })
+        .on("pointerleave", function () {
+            d3.select(this).attr("r", 2.7);
+            if (tip) tip.hidden = true;
+        });
 
     // true-peak reference line
     svg.append("line")
@@ -810,6 +1038,40 @@ function drawCadence() {
     }
 }
 
+/* tooltip for a cadence sample dot: when it was taken, what the satellite read,
+   and — at slower cadences — the true peak hiding in the gap to the next look */
+function showCadenceTip(tip, i, sIdx, tot, x, y, W) {
+    if (!tip) return;
+    const reading = tot[i];
+    let html =
+        `<span class="tip-time">${fmtTime(DATA.frames[i].t)}</span>` +
+        `<span class="tip-read">this look · <b>${reading.toFixed(1)} GW</b></span>`;
+    if (cd.idx === 0) {
+        html += `<span class="tip-sub">full cadence — nothing missed</span>`;
+    } else {
+        // the true peak hiding between this look and the next one
+        const ni = sIdx[sIdx.indexOf(i) + 1];
+        let peak = reading;
+        if (ni != null)
+            for (let k = i; k <= ni; k++) peak = Math.max(peak, tot[k]);
+        if (ni != null && peak > reading + 0.3) {
+            html +=
+                `<span class="tip-miss">misses a <b>${Math.round(peak)} GW</b> peak</span>` +
+                `<span class="tip-sub">before its next look, ${C_INTERVALS[cd.idx].short} later</span>`;
+        }
+    }
+    tip.innerHTML = html;
+    tip.hidden = false;
+    // measure the card, then clamp it inside the plot so it never gets clipped
+    const tw = tip.offsetWidth;
+    tip.style.left = Math.max(4, Math.min(W - tw - 4, x(i) - tw / 2)) + "px";
+    const topPx = y(tot[i]);
+    tip.style.top = topPx + "px";
+    // sit above the dot when there's room, else below — never over the readouts
+    tip.style.transform =
+        topPx < 120 ? "translateY(14px)" : "translateY(calc(-100% - 12px))";
+}
+
 /* ============================================================
    TRANSPORT
    ============================================================ */
@@ -863,7 +1125,10 @@ function start() {
     els.play.querySelector(".play-icon").textContent = "❚❚";
     els.play.querySelector(".play-text").textContent = "PAUSE";
     lastTick = performance.now();
-    requestAnimationFrame(loop);
+    // the persistent flow-field ticker advances frames too; only the
+    // no-wind fallback path needs the old loop
+    if (WIND) startAmbient();
+    else requestAnimationFrame(loop);
 }
 function stop() {
     playing = false;
@@ -979,6 +1244,9 @@ function onHover(ev) {
     const r = els.canvas.getBoundingClientRect();
     const mx = (ev.clientX - r.left) * (cssW() / r.width);
     const my = (ev.clientY - r.top) * (cssH() / r.height);
+    windMouse.x = mx; // let the cursor stir the wind field
+    windMouse.y = my;
+    windMouse.active = true;
     let best = null,
         bd = 16 * 16;
     for (const p of litPixels) {
@@ -1028,6 +1296,7 @@ function onResize() {
     sizeCanvas();
     projection = d3.geoMercator().fitSize([cssW(), cssH()], viewCorners());
     buildBasemapCache();
+    seedParticles();
     setupTimeline();
     drawCadence();
     render();
