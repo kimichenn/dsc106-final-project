@@ -953,5 +953,358 @@ kbd {
   .reveal { animation: none; opacity: 1; transform: none; }
   .fade-up { transition: none; opacity: 1; transform: none; }
   .anno-dot::after { animation: none; }
+  .step-down { animation: none; }
   html { scroll-behavior: auto; }
+}
+
+/* ============================================================
+   HERO DATELINE — the fire names, up in the title block
+   ============================================================ */
+.hero-dateline {
+  margin-top: 1.4rem;
+  font-family: var(--serif);
+  font-size: clamp(1.35rem, 3.1vw, 2.2rem);
+  line-height: 1.15;
+  color: var(--bone);
+}
+.hd-pal { font-style: italic; color: var(--palisades); }
+.hd-eat { font-style: italic; color: var(--eaton); }
+.hd-meta {
+  font-family: var(--mono);
+  font-size: 0.5em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ash);
+  white-space: nowrap;
+}
+/* the raw fire-accent colors read fine on the dark page; nudge them darker on
+   the light theme so they keep their contrast */
+:root[data-theme="light"] .hd-pal,
+:root:not([data-theme="dark"]) .hd-pal { color: #c2511a; }
+:root[data-theme="light"] .hd-eat,
+:root:not([data-theme="dark"]) .hd-eat { color: #7548c8; }
+
+/* ============================================================
+   FROM THE GROUND — real fire photographs
+   ============================================================ */
+.ground {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: clamp(4rem, 8vw, 7rem) clamp(1.4rem, 5vw, 5rem);
+  border-top: 1px solid var(--line-soft);
+}
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: clamp(0.9rem, 2.4vw, 1.5rem);
+}
+.photo {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #0b0a09;
+  box-shadow: var(--panel-shadow);
+  cursor: zoom-in;
+}
+.photo img {
+  display: block;
+  width: 100%;
+  height: clamp(220px, 30vw, 320px);
+  object-fit: cover;
+  transition: transform 0.7s cubic-bezier(.2,.7,.2,1);
+}
+.photo:hover img,
+.photo:focus-visible img { transform: scale(1.04); }
+.photo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* corner badge that makes the click-to-enlarge affordance explicit */
+.ph-zoom {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  color: #f3ece0;
+  background: rgba(8,6,5,0.6);
+  border: 1px solid rgba(243,236,224,0.35);
+  border-radius: 3px;
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.3s ease, transform 0.3s ease, background 0.3s ease;
+  pointer-events: none;
+}
+.photo:hover .ph-zoom,
+.photo:focus-visible .ph-zoom { opacity: 1; transform: translateY(0); }
+
+/* ---- lightbox ---- */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1rem, 4vw, 3rem);
+  background: rgba(6,4,3,0.92);
+  backdrop-filter: blur(6px);
+  cursor: zoom-out;
+  animation: lbFade 0.22s ease;
+}
+.lightbox[hidden] { display: none; }
+@keyframes lbFade { from { opacity: 0; } to { opacity: 1; } }
+.lb-figure {
+  margin: 0;
+  max-width: min(1100px, 94vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+}
+.lb-figure img {
+  display: block;
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border: 1px solid var(--line);
+}
+.lb-cap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.85rem 0.2rem 0;
+}
+.lb-tag {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  padding: 0.14rem 0.5rem;
+  border-radius: 2px;
+}
+.lb-tag.ph-pal { background: var(--palisades); color: #1c1004; }
+.lb-tag.ph-eat { background: var(--eaton);     color: #170b27; }
+.lb-where { font-size: 0.95rem; color: #f3ece0; flex: 1 1 14rem; }
+.lb-source {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: #ffce6a;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255,206,106,0.4);
+  white-space: nowrap;
+}
+.lb-source:hover { border-bottom-color: #ffce6a; }
+.lb-close {
+  position: fixed;
+  top: 1rem;
+  right: 1.1rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: #f3ece0;
+  background: rgba(20,16,13,0.8);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.lb-close:hover { border-color: var(--accent); transform: scale(1.06); }
+@media (prefers-reduced-motion: reduce) {
+  .lightbox { animation: none; }
+}
+.photo figcaption {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 2.2rem 1rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  background: linear-gradient(to top, rgba(7,5,4,0.94) 12%, rgba(7,5,4,0.55) 55%, rgba(7,5,4,0));
+}
+.ph-tag {
+  width: fit-content;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  padding: 0.14rem 0.5rem;
+  border-radius: 2px;
+}
+.ph-pal { background: var(--palisades); color: #1c1004; }
+.ph-eat { background: var(--eaton);     color: #170b27; }
+.ph-where { font-size: 0.92rem; line-height: 1.35; color: #f3ece0; }
+.ph-credit {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.03em;
+  color: rgba(243,236,224,0.62);
+}
+
+/* ============================================================
+   SCROLLY PROGRESS — rail in the instrument + numbered steps
+   ============================================================ */
+.scrolly-rail {
+  padding: 0.72rem 1.3rem 0.6rem;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rail-head { display: flex; align-items: baseline; gap: 0.7rem; }
+.rail-step {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.rail-title {
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1;
+  color: var(--bone);
+}
+.rail-track { display: flex; gap: 5px; }
+.rail-seg {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 0.45s ease, box-shadow 0.45s ease;
+}
+.rail-seg.done { background: rgba(255,90,31,0.45); }
+.rail-seg.now {
+  background: var(--accent);
+  box-shadow: 0 0 9px rgba(255,90,31,0.65);
+}
+
+/* numbered step ordinal — fills with the accent when the step is the active one */
+.step-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--ash-dim);
+  margin-bottom: 1.1rem;
+  transition: color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease, transform 0.4s ease;
+}
+.step.is-active .step-n {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(255,90,31,0.12);
+  transform: scale(1.05);
+}
+/* sharpen the active/inactive contrast so the current beat is unmistakable */
+.step { opacity: 0.22; transition: opacity 0.45s ease, transform 0.45s ease; transform: translateY(6px); }
+.step.is-active { opacity: 1; transform: none; }
+.step-down {
+  display: block;
+  text-align: center;
+  margin-top: 2.4rem;
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  color: var(--ash-dim);
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.step.is-active .step-down { opacity: 0.6; animation: stepBob 1.8s ease-in-out infinite; }
+@keyframes stepBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(5px); }
+}
+
+/* ============================================================
+   TAKEAWAY CARD — the clear, actionable conclusion
+   ============================================================ */
+.takeaway-card {
+  margin-top: clamp(2.2rem, 5vw, 3.4rem);
+  max-width: 56rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: var(--ink-1);
+  box-shadow: var(--panel-shadow);
+  padding: clamp(1.4rem, 3.2vw, 2.3rem);
+}
+.tk-kicker {
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin-bottom: 0.7rem;
+}
+.tk-headline {
+  font-family: var(--serif);
+  font-size: clamp(1.3rem, 2.7vw, 1.95rem);
+  line-height: 1.18;
+  color: var(--bone);
+  margin-bottom: 1.4rem;
+}
+.tk-headline em { font-style: italic; color: var(--gold); }
+.tk-points {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.tk-point {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.95rem 1.05rem;
+  background: var(--ink-2);
+  border: 1px solid var(--line-soft);
+}
+.tk-num {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  color: var(--gold);
+}
+.tk-lbl { font-size: 0.87rem; line-height: 1.5; color: var(--ash); }
+.tk-lbl b { color: var(--bone); font-weight: 600; }
+.tk-action { font-size: 1.02rem; line-height: 1.65; color: var(--ash); }
+.tk-action strong { color: var(--bone); font-weight: 600; }
+.tk-action-tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 0.1rem 0.42rem;
+  margin-right: 0.55rem;
+  vertical-align: middle;
+}
+
+@media (max-width: 700px) {
+  .photo-grid { grid-template-columns: 1fr; }
+  .tk-points { grid-template-columns: 1fr; }
+}
+@media (max-width: 960px) {
+  .scrolly-rail { padding: 0.5rem clamp(1.4rem, 5vw, 5rem) 0.45rem; }
+  .rail-title { font-size: 0.9rem; }
+  .step-n { width: 1.9rem; height: 1.9rem; margin-bottom: 0.8rem; }
+  .step-down { margin-top: 1.6rem; }
 }

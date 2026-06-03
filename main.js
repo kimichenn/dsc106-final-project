@@ -84,6 +84,8 @@ const els = {
 };
 
 let DATA, BASEMAP, WIND, projection;
+let SAT_IMG = null,
+    SAT_BOUNDS = null; // satellite drape + its exact geographic bounds
 let basemapCache; // offscreen canvas with static map
 let frameIdx = 0,
     playing = false,
@@ -100,11 +102,33 @@ let particles = [],
     lastAmbient = 0;
 
 /* ---------- load ---------- */
+/* load the satellite drape (image + its geographic bounds). Optional — if it
+   is missing the map falls back to the stylized dark basemap. */
+function loadSatellite() {
+    return d3
+        .json("data/basemap_bounds.json")
+        .then(
+            (bounds) =>
+                new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        SAT_IMG = img;
+                        SAT_BOUNDS = bounds;
+                        resolve();
+                    };
+                    img.onerror = () => resolve();
+                    img.src = "data/basemap_satellite.jpg";
+                }),
+        )
+        .catch(() => {});
+}
+
 Promise.all([
     d3.json("data/goes_frames.json"),
     d3.json("data/socal_basemap.json"),
     // wind is an enhancement layer — never let a missing file break the core viz
     d3.json("data/wind.json").catch(() => null),
+    loadSatellite(),
 ])
     .then(([frames, basemap, wind]) => {
         DATA = frames;
@@ -119,6 +143,7 @@ Promise.all([
         setupKeyboard();
         setupScrollReveal();
         setupScrolly();
+        setupLightbox();
         rebuildHeatTo(0);
         render();
         if (WIND) setupAmbient();
@@ -215,23 +240,56 @@ function buildBasemapCache() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const geo = d3.geoPath(projection, ctx);
 
-    // ocean
-    ctx.fillStyle = "#0b0a09";
-    ctx.fillRect(0, 0, w, h);
+    if (SAT_IMG && SAT_BOUNDS) {
+        // --- real satellite imagery drape ---
+        // Both the tiles and d3.geoMercator are spherical Mercator, so mapping
+        // the image's geographic rectangle to the screen is a pure scale+shift:
+        // place its lon/lat-bound corners at their projected pixel positions.
+        const b = SAT_BOUNDS;
+        const tl = projection([b.lonMin, b.latMax]);
+        const br = projection([b.lonMax, b.latMin]);
+        // muted + darkened so the fire glow stays dominant and labels read
+        ctx.fillStyle = "#0b0a09";
+        ctx.fillRect(0, 0, w, h);
+        ctx.save();
+        if ("filter" in ctx) ctx.filter = "saturate(0.78) brightness(0.62)";
+        ctx.drawImage(SAT_IMG, tl[0], tl[1], br[0] - tl[0], br[1] - tl[1]);
+        ctx.restore();
+        // warm dark wash to seat the imagery into the night palette
+        ctx.fillStyle = "rgba(12,9,7,0.34)";
+        ctx.fillRect(0, 0, w, h);
 
-    // land (counties)
-    ctx.beginPath();
-    BASEMAP.features.forEach((f) => geo(f));
-    ctx.fillStyle = "#15120f";
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "#2c2620";
-    ctx.stroke();
+        // faint county lines for orientation over the imagery
+        ctx.beginPath();
+        BASEMAP.features.forEach((f) => geo(f));
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(150,135,110,0.28)";
+        ctx.stroke();
+    } else {
+        // --- fallback: stylized dark basemap ---
+        // ocean
+        ctx.fillStyle = "#0b0a09";
+        ctx.fillRect(0, 0, w, h);
+
+        // land (counties)
+        ctx.beginPath();
+        BASEMAP.features.forEach((f) => geo(f));
+        ctx.fillStyle = "#15120f";
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "#2c2620";
+        ctx.stroke();
+    }
 
     // edge vignette
     ctx.strokeStyle = "#1c1813";
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+    // labels & markers sit over the imagery — give them a soft shadow so they
+    // stay legible against the varied satellite background
+    ctx.shadowColor = "rgba(0,0,0,0.85)";
+    ctx.shadowBlur = 3;
 
     // scale bar (10 km)
     const tenKm = cellPx() * 5; // 5 cells = 10 km
@@ -1191,6 +1249,45 @@ function setupScrolly() {
     if (!steps.length) return;
     let active = -1;
 
+    // number each step and add a "keep scrolling" cue between them, so the
+    // jump from one beat to the next reads as a deliberate sequence
+    steps.forEach((s, i) => {
+        const n = document.createElement("span");
+        n.className = "step-n";
+        n.textContent = "0" + (i + 1);
+        s.insertBefore(n, s.firstChild);
+        if (i < steps.length - 1) {
+            const cue = document.createElement("span");
+            cue.className = "step-down";
+            cue.innerHTML = "↓";
+            s.appendChild(cue);
+        }
+    });
+
+    // build the progress rail inside the instrument (segments = steps)
+    const railTrack = document.getElementById("rail-track");
+    const railStep = document.getElementById("rail-step");
+    const railTitle = document.getElementById("rail-title");
+    let railSegs = [];
+    if (railTrack) {
+        railTrack.innerHTML = "";
+        railSegs = steps.map(() => {
+            const seg = document.createElement("span");
+            seg.className = "rail-seg";
+            railTrack.appendChild(seg);
+            return seg;
+        });
+    }
+    function paintRail(idx) {
+        railSegs.forEach((seg, i) => {
+            seg.classList.toggle("done", i < idx);
+            seg.classList.toggle("now", i === idx);
+        });
+        if (railStep) railStep.textContent = `STEP ${idx + 1} / ${steps.length}`;
+        if (railTitle)
+            railTitle.textContent = steps[idx].dataset.title || "";
+    }
+
     function pick() {
         const sr = scrolly.getBoundingClientRect();
         if (sr.bottom < 0 || sr.top > window.innerHeight) return; // section off-screen
@@ -1217,6 +1314,7 @@ function setupScrolly() {
             steps.forEach((s, i) =>
                 s.classList.toggle("is-active", i === best),
             );
+            paintRail(best);
             if (!scrubbing) tweenTo(+steps[best].dataset.frame);
         }
     }
@@ -1290,6 +1388,59 @@ function setupScrollReveal() {
         { threshold: 0.2 },
     );
     targets.forEach((t) => io.observe(t));
+}
+
+/* the ground photos enlarge on click — the hover-zoom implies they're
+   interactive, so make that real instead of removing the cue */
+function setupLightbox() {
+    const lb = document.getElementById("lightbox");
+    const figs = [...document.querySelectorAll(".photo")];
+    if (!lb || !figs.length) return;
+    const img = document.getElementById("lb-img");
+    const tag = document.getElementById("lb-tag");
+    const where = document.getElementById("lb-where");
+    const source = document.getElementById("lb-source");
+    const closeBtn = document.getElementById("lb-close");
+    let lastFocus = null;
+
+    function open(fig) {
+        const im = fig.querySelector("img");
+        const tagEl = fig.querySelector(".ph-tag");
+        const whereEl = fig.querySelector(".ph-where");
+        img.src = im.src;
+        img.alt = im.alt;
+        tag.textContent = tagEl ? tagEl.textContent : "";
+        tag.className =
+            "lb-tag" + (tagEl && tagEl.classList.contains("ph-eat") ? " ph-eat" : " ph-pal");
+        where.textContent = whereEl ? whereEl.textContent.trim() : "";
+        source.href = fig.dataset.source || "#";
+        lb.hidden = false;
+        lastFocus = fig;
+        closeBtn.focus();
+    }
+    function close() {
+        lb.hidden = true;
+        img.src = "";
+        if (lastFocus) lastFocus.focus();
+    }
+
+    figs.forEach((fig) => {
+        fig.addEventListener("click", () => open(fig));
+        fig.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                open(fig);
+            }
+        });
+    });
+    closeBtn.addEventListener("click", close);
+    // click the backdrop (but not the figure) closes
+    lb.addEventListener("click", (e) => {
+        if (!e.target.closest(".lb-figure")) close();
+    });
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !lb.hidden) close();
+    });
 }
 
 function onResize() {
